@@ -1,0 +1,52 @@
+version: '2'
+services:
+
+  #############################################################################
+  # See: docker/Dockerfile
+  kafkatest_server:
+    build: .
+
+    restart: "always"
+
+    container_name: "docker_kafkatest_server"
+
+    environment:
+      APACHE_RUN_USER: david
+      APACHE_RUN_GROUP: david
+
+    ports:
+      - "8080:80"
+
+    volumes:
+      - "../.:/var/www/html"
+
+    networks:
+      - "kafkatest_network"
+
+    links:
+      - "kafkatest_queue"
+
+
+  #############################################################################
+  # See: https://github.com/spotify/docker-kafka/
+  kafkatest_queue:
+    image: spotify/kafka
+
+    restart: "always"
+
+    container_name: "docker_kafkatest_kafka"
+
+    environment:
+      ADVERTISED_PORT: 9092
+      ADVERTISED_HOST: kafkatest_queue
+
+    ports:
+      - "2181:2181"
+      - "9092:9092"
+
+    networks:
+      - "kafkatest_network"
+
+networks:
+  kafkatest_network:
+    driver: bridge
