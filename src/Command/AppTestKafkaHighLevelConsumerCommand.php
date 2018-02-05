@@ -88,6 +88,9 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
         $kafkaConf = new Conf();
         $kafkaConf->set('group.id', $groupId);
         $kafkaConf->set('metadata.broker.list', $brokers);
+        $kafkaConf->set('enable.auto.commit', 'false');
+        $kafkaConf->set('auto.commit.interval.ms', 0);
+        $kafkaConf->set('enable.auto.offset.store', 'false');
 
         // Set a rebalance callback to log partition assignments (optional)
         $kafkaConf->setRebalanceCb(function (KafkaConsumer $kafka, $err, array $partitions = null) {
@@ -110,12 +113,8 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
         });
 
         $kafkaTopicConf = new TopicConf();
-        $kafkaTopicConf->set('auto.offset.reset', 'smallest');
-//        $kafkaTopicConf->set('auto.commit.interval.ms', 1e3);
-//        $kafkaTopicConf->set('offset.store.sync.interval.ms', 60e3);
+        $kafkaTopicConf->set('auto.offset.reset', 'earliest');
         $kafkaTopicConf->set('offset.store.method', 'broker');
-//        $kafkaTopicConf->set('offset.store.method', 'file');
-//        $kafkaTopicConf->set('offset.store.path', 'var/cache/kafka');
         $kafkaConf->setDefaultTopicConf($kafkaTopicConf);
 
         try {
@@ -138,6 +137,7 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
                         case RD_KAFKA_RESP_ERR_NO_ERROR:
                             dump($msg->payload);
                             ++$this->messagesRetrieved;
+                            $kafkaConsumer->commit($msg);
                             break;
 
                         case RD_KAFKA_RESP_ERR__PARTITION_EOF:
