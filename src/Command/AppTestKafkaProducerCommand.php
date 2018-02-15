@@ -2,6 +2,7 @@
 
 namespace App\Command;
 
+use App\Model\KafkaConfig;
 use RdKafka\Producer;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
@@ -20,9 +21,6 @@ class AppTestKafkaProducerCommand extends Command
     /** @var string */
     protected static $defaultName = 'app:test-kafka-producer';
 
-    /** @var string */
-    protected static $offsetFile = 'var/cache/kafka/producer.offset';
-
     /**
      * Configures the current command.
      *
@@ -37,53 +35,102 @@ class AppTestKafkaProducerCommand extends Command
     /**
      * Executes the current command.
      *
+     * @param InputInterface $input
+     * @param OutputInterface $output
      * @return null|int null or 0 if everything went fine, or an error code
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        // Read command line options
         $count = $input->getArgument('count');
 
-        $offset = 0;
-        $buffer = @file_get_contents(self::$offsetFile);
-        if (false !== $buffer) {
-            $offset = intval($buffer);
-        }
-
+        // Message to the user
         $io = new SymfonyStyle($input, $output);
+        $io->writeln('Publishing ' . $count . ' messges to topic "' . KafkaConfig::TOPIC_NAME . '"...');
 
+        // Create the Kafka producer
         $kafkaProducer = new Producer();
         $kafkaProducer->setLogLevel(LOG_DEBUG);
-        $kafkaProducer->addBrokers('kafkatest_queue');
+        $kafkaProducer->addBrokers(KafkaConfig::BROKER_LIST);
 
-        $kafkaTopic = $kafkaProducer->newTopic('events');
+        // Create the Kafka topic
+        $kafkaTopic = $kafkaProducer->newTopic(KafkaConfig::TOPIC_NAME);
 
+        // Loop
         $i = 0;
         do {
-            $message = [
-                'type' => 'event',
-                'name' => 'TestKafKaPRoducer',
-                'createdAt' => (new \DateTime())->format(\DateTime::ATOM),
-                'payload' => [
-                    'num' => ++$offset
-                ]
-            ];
+            $key = $this->generateRandomKey();
+            $message = $this->buildMessage($key);
 
+            // Send the message to Kafka
             $kafkaTopic->produce(
                 RD_KAFKA_PARTITION_UA,
                 0,
-                json_encode($message)
+                $message,
+                $key
             );
 
-            file_put_contents(self::$offsetFile, sprintf("%d", $offset));
-
+            // Wait
             $kafkaProducer->poll(0);
         } while (++$i < $count);
 
+        // Wait untill all messages are confirmed
         while ($kafkaProducer->getOutQLen() > 0) {
             $kafkaProducer->poll(50);
         }
 
+        // Message to the user
         $io->success('Produced ' . $count . ' messages.');
+
+        // End command
         return 0;
+    }
+
+    /**
+     * Generate the next key to use which is a random key
+     *
+     * @return int
+     */
+    private function generateRandomKey() : int
+    {
+        return rand(0, 99);
+    }
+
+    /**
+     * Builds the message to sent to Kafka
+     *
+     * @param int $key
+     * @return string
+     */
+    private function buildMessage(int $key) : string
+    {
+        return json_encode([
+            'type' => 'event',
+            'name' => 'TestKafKaPRoducer',
+            'createdAt' => (new \DateTime())->format(\DateTime::ATOM),
+            'payload' => [
+                'data' => $this->nextProducerData()
+            ],
+            'metadata' => [
+                'key' => $key,
+                'topic' => KafkaConfig::TOPIC_NAME
+            ]
+        ]);
+    }
+
+    /**
+     * Return the next producer data which is a sequential number
+     *
+     * @return int
+     */
+    private function nextProducerData() : int
+    {
+        $data = 0;
+        $buffer = @file_get_contents(KafkaConfig::PRODUCER_DATA_FILE);
+        if (false !== $buffer) {
+            $data = intval($buffer);
+        }
+        @file_put_contents(KafkaConfig::PRODUCER_DATA_FILE, sprintf("%d", 1 + $data));
+        return $data;
     }
 }

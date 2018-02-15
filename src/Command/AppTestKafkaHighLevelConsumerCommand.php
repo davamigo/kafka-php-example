@@ -4,11 +4,11 @@ namespace App\Command;
 
 use App\Exception\CommandRuntimeException;
 use App\Exception\CommandUnexpectedValueException;
+use App\Model\KafkaConfig;
 use RdKafka\Conf;
 use RdKafka\Exception;
 use RdKafka\KafkaConsumer;
 use RdKafka\TopicConf;
-use RdKafka\TopicPartition;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
@@ -50,17 +50,19 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
      */
     protected function execute(InputInterface $input, OutputInterface $output)
     {
+        // Read command line options
         $daemonMode = $input->getOption('daemon');
-        $topic = 'events';
 
+        // Message to the user
         $io = new SymfonyStyle($input, $output);
-        $io->writeln('Start listening topic ' . $topic);
+        $io->writeln('Start listening topic ' . KafkaConfig::TOPIC_NAME);
 
+        // Start consuming events
         try {
             $this->consume(
-                $topic,
-                'Kafka-events-consumer',
-                'kafkatest_queue',
+                KafkaConfig::TOPIC_NAME,
+                KafkaConfig::HIGH_LEVEL_GROUP_ID,
+                KafkaConfig::BROKER_LIST,
                 $daemonMode
             );
         } catch (CommandUnexpectedValueException $exc) {
@@ -71,7 +73,10 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
             return -2;
         }
 
+        // Message to the user
         $io->success('Total messages retrieved: ' . $this->messagesRetrieved);
+
+        // End command
         return 0;
     }
 
@@ -83,26 +88,27 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
      * @throws CommandRuntimeException
      * @throws CommandUnexpectedValueException
      */
-    public function consume($topic, $groupId, $brokers, $daemonMode) : void
+    public function consume(string $topic, string $groupId, string $brokers, bool $daemonMode) : void
     {
+        // Kafka configuration
         $kafkaConf = new Conf();
         $kafkaConf->set('group.id', $groupId);
-        $kafkaConf->set('metadata.broker.list', $brokers);
+        $kafkaConf->set('bootstrap.servers', $brokers);
         $kafkaConf->set('enable.auto.commit', 'false');
         $kafkaConf->set('auto.commit.interval.ms', 0);
-        $kafkaConf->set('enable.auto.offset.store', 'false');
+//        $kafkaConf->set('enable.auto.offset.store', 'false');
 
         // Set a rebalance callback to log partition assignments (optional)
         $kafkaConf->setRebalanceCb(function (KafkaConsumer $kafka, $err, array $partitions = null) {
             switch ($err) {
                 case RD_KAFKA_RESP_ERR__ASSIGN_PARTITIONS:
-                    echo 'Assign ' . (empty($partitions) ? 0 : count($partitions)) . ' partitions...';
+                    echo 'Assigning ' . (empty($partitions) ? 0 : count($partitions)) . ' partitions...';
                     $kafka->assign($partitions);
                     echo ' done!' . PHP_EOL;
                     break;
 
                 case RD_KAFKA_RESP_ERR__REVOKE_PARTITIONS:
-                    echo 'Revoke ' . (empty($partitions) ? 0 : count($partitions)) . ' partitions...';
+                    echo 'Revoking ' . (empty($partitions) ? 0 : count($partitions)) . ' partitions...';
                     $kafka->assign(null);
                     echo ' done!' . PHP_EOL;
                     break;
@@ -112,9 +118,11 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
             }
         });
 
+        // Topic configuration
         $kafkaTopicConf = new TopicConf();
         $kafkaTopicConf->set('auto.offset.reset', 'earliest');
-        $kafkaTopicConf->set('offset.store.method', 'broker');
+        $kafkaTopicConf->set('enable.auto.commit', 'false');
+//        $kafkaTopicConf->set('offset.store.method', 'broker');
         $kafkaConf->setDefaultTopicConf($kafkaTopicConf);
 
         try {
