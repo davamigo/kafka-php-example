@@ -143,9 +143,13 @@ class AppTestKafkaHighLevelConsumerCommand extends Command
                 } else {
                     switch ($msg->err) {
                         case RD_KAFKA_RESP_ERR_NO_ERROR:
-                            dump($msg->payload);
-                            ++$this->messagesRetrieved;
-                            $kafkaConsumer->commit($msg);
+                            if (0 == rand(0, 5)) {
+                                echo 'WARNING!!!! Commit not sent for data ' . json_decode($msg->payload, true)['payload']['data'] . PHP_EOL;
+                            } else {
+                                dump($msg->payload);
+                                ++$this->messagesRetrieved;
+                                $kafkaConsumer->commit($msg);
+                            }
                             break;
 
                         case RD_KAFKA_RESP_ERR__PARTITION_EOF:
